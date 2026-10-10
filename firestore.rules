@@ -1,0 +1,54 @@
+rules_version = '2';
+
+// =====================================================================
+// CrowdMix — Reglas de Firestore (punto de partida)
+// -----------------------------------------------------------------------
+// Objetivo: cualquier persona con el código puede leer el evento y
+// enviar pedidos; solo el DJ (identificado por su "hostToken", guardado
+// en su propio localStorage) puede aprobar, rechazar o cambiar ajustes.
+//
+// LÍMITE IMPORTANTE: esto es protección básica contra "curiosos", no
+// una barrera de nivel bancario — cualquiera que abra las herramientas
+// de desarrollador de su navegador puede ver el hostToken si intercepta
+// las peticiones. Como el dinero de las propinas NO pasa por esta app
+// (se coordina por Yape/Plin fuera de Firestore), el peor caso es que
+// alguien reordene o borre pedidos de broma, no una pérdida de dinero.
+// Si vas a usar esto en eventos grandes o pagados, considera migrar el
+// control de DJ a Firebase Authentication con email/contraseña y unas
+// Cloud Functions que verifiquen el rol — está fuera del alcance de
+// esta primera versión. Ver README.md, sección "Seguridad y próximos
+// pasos".
+// =====================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /events/{eventId} {
+      allow read: if true;
+      allow create: if request.auth != null
+                    && request.resource.data.hostUid == request.auth.uid;
+      allow update: if request.auth != null
+                    && resource.data.hostUid == request.auth.uid;
+      allow delete: if false;
+
+      match /requests/{requestId} {
+        allow read: if true;
+
+        // El público crea su propio pedido, con su propio uid anónimo.
+        allow create: if request.auth != null
+                      && request.resource.data.requesterId is string
+                      && request.resource.data.song is string
+                      && request.resource.data.song.size() > 0
+                      && (request.resource.data.status == "pending"
+                          || (request.resource.data.status == "accepted"
+                              && get(/databases/$(database)/documents/events/$(eventId))
+                                   .data.approvalMode == "auto"));
+
+        // Confirmar la propia propina no requiere ser el DJ.
+        allow update: if request.auth != null;
+
+        allow delete: if false;
+      }
+    }
+  }
+}

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CrowdMix — En vivo</title>
+<meta name="theme-color" content="#1C1024">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="stage" id="stage">
+  <header class="stage-header">
+    <div class="row">
+      <span class="live-dot"></span>
+      <span class="eyebrow-marquee" id="eventName">CARGANDO EVENTO…</span>
+    </div>
+    <span class="stage-brand">CROWDMIX <span>·</span> EN VIVO</span>
+  </header>
+
+  <main class="stage-main">
+    <section class="stage-song" aria-labelledby="nowPlayingTitle">
+      <div class="now-playing-label"><span class="stage-live-indicator"></span>SONANDO AHORA</div>
+      <h1 class="now-playing-title" id="nowPlayingTitle">Pide tu canción</h1>
+      <div class="row stage-artist">
+        <div class="eq-bars" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+        <span class="mono" id="nowPlayingArtist"></span>
+      </div>
+    </section>
+
+    <aside class="stage-join" aria-label="Unirse al evento">
+      <div class="stage-join-heading">
+        <span class="stage-join-icon" aria-hidden="true">♫</span>
+        <div>
+          <h2>Tu próxima canción</h2>
+          <p>Escanea y envía tu pedido</p>
+        </div>
+      </div>
+      <div class="stage-qr" id="joinQrWrap" aria-label="Código QR para pedir una canción"></div>
+      <p class="stage-code-label">O ingresa el código</p>
+      <div class="stage-code mono" id="joinCode">------</div>
+      <p class="stage-join-hint">Abre la cámara de tu celular para escanear</p>
+    </aside>
+  </main>
+
+  <footer class="ticker-wrap">
+    <span class="ticker-label">EN LA COLA</span>
+    <div class="ticker-viewport">
+      <div class="ticker-track mono" id="tickerTrack">
+        <span>Escanea el QR y pide tu canción</span>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script type="module">
+import { ready, watchEvent, watchRequests, fmtSoles } from "./js/app-common.js";
+
+const params = new URLSearchParams(location.search);
+const code = (params.get("e") || "").toUpperCase();
+const eventName = document.getElementById("eventName");
+const nowPlayingTitle = document.getElementById("nowPlayingTitle");
+const nowPlayingArtist = document.getElementById("nowPlayingArtist");
+const tickerTrack = document.getElementById("tickerTrack");
+const joinCode = document.getElementById("joinCode");
+const joinQrWrap = document.getElementById("joinQrWrap");
+
+function renderJoinQr() {
+  if (typeof window.QRCode !== "function") {
+    console.error("No se pudo cargar el generador de códigos QR.");
+    joinQrWrap.textContent = "QR no disponible";
+    joinCode.textContent = code;
+    return;
+  }
+  const guestUrl = new URL("./guest.html", location.href);
+  guestUrl.searchParams.set("e", code);
+  try {
+    new window.QRCode(joinQrWrap, {
+      text: guestUrl.href,
+      width: 220,
+      height: 220,
+      colorDark: "#241733",
+      colorLight: "#F3E9D2",
+      correctLevel: window.QRCode.CorrectLevel.M,
+    });
+  } catch (err) {
+    console.error("No se pudo generar el código QR.", err);
+    joinQrWrap.textContent = "QR no disponible";
+  }
+  joinCode.textContent = code;
+}
+
+function showUnavailable(message) {
+  eventName.textContent = "EVENTO NO DISPONIBLE";
+  nowPlayingTitle.textContent = message;
+  nowPlayingArtist.textContent = "";
+  tickerTrack.textContent = message;
+  joinQrWrap.hidden = true;
+  joinCode.textContent = "------";
+}
+
+(async () => {
+  if (!code) {
+    showUnavailable("No se indicó un código de evento.");
+    return;
+  }
+  renderJoinQr();
+  await ready();
+  let eventUnavailable = false;
+
+  watchEvent(code, (data) => {
+    if (!data) {
+      eventUnavailable = true;
+      showUnavailable("No se encontró este evento.");
+      return;
+    }
+    eventName.textContent = `${data.eventName} · ${data.djName}`;
+    if (data.nowPlaying) {
+      nowPlayingTitle.textContent = data.nowPlaying.song;
+      nowPlayingArtist.textContent = data.nowPlaying.artist || "";
+    } else {
+      nowPlayingTitle.textContent = "Pide tu canción";
+      nowPlayingArtist.textContent = "";
+    }
+  });
+
+  watchRequests(code, (all) => {
+    if (eventUnavailable) return;
+    const upcoming = all.filter((r) => ["pending", "accepted"].includes(r.status)).slice(0, 8);
+    const shout = all.filter((r) => r.tipConfirmed && r.note).slice(-4);
+    const items = [];
+    upcoming.forEach((r) => items.push(`Próximo: ${r.song}${r.requesterName ? " — pedido por " + r.requesterName : ""}`));
+    shout.forEach((r) => items.push(`🥂 Gracias ${r.requesterName} por la propina de ${fmtSoles(r.tipPledged)}`));
+    if (!items.length) items.push("Escanea el QR y pide tu canción");
+    const html = items.map((t) => `<span>${escapeHtml(t)}</span>`).join("");
+    tickerTrack.innerHTML = html + html; // duplicado para el loop continuo
+  });
+})();
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+</script>
+</body>
+</html>

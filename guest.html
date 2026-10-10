@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pedir canción — CrowdMix</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1C1024">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="shell" id="app">
+
+  <div id="loadingState" class="center" style="padding-top:80px;">
+    <p class="eyebrow-marquee">Conectando con el evento…</p>
+  </div>
+
+  <div id="notFoundState" class="stack center" style="display:none; padding-top:60px;">
+    <h2>No encontramos este evento</h2>
+    <p>El código puede haber cambiado o el evento terminó. Pide el código actualizado al DJ.</p>
+    <a class="btn btn-ghost" href="index.html">Volver al inicio</a>
+  </div>
+
+  <div id="mainState" style="display:none;">
+    <header class="spread" style="margin-bottom:22px;">
+      <div>
+        <div class="row"><span class="live-dot" id="liveDot"></span><span class="eyebrow-marquee" id="eventName">Evento</span></div>
+        <p class="small" id="djLine">DJ</p>
+      </div>
+      <span class="pill mono" id="nowPlayingPill" style="display:none;"></span>
+    </header>
+
+    <div id="pausedNotice" class="empty" style="display:none; margin-bottom:16px;">
+      El DJ pausó los pedidos por ahora. Vuelve a intentarlo en un momento.
+    </div>
+
+    <form id="requestForm" class="ticket stamp-in">
+      <div class="ticket-body stack">
+        <div>
+          <label for="song">Canción</label>
+          <input id="song" type="text" placeholder="Título de la canción" required maxlength="80">
+        </div>
+        <div>
+          <label for="artist">Artista <span class="muted">(opcional)</span></label>
+          <input id="artist" type="text" placeholder="Artista o grupo" maxlength="60">
+        </div>
+        <div>
+          <label for="name">Tu nombre <span class="muted">(para que el DJ te salude)</span></label>
+          <input id="name" type="text" placeholder="¿Cómo te llamamos?" maxlength="30">
+        </div>
+        <div>
+          <label for="note">Mensaje para el DJ <span class="muted">(opcional)</span></label>
+          <textarea id="note" placeholder="Ej: es el cumpleaños de mi amiga 🎉" maxlength="140"></textarea>
+        </div>
+
+        <div>
+          <label>Propina para hacer sonar tu pedido antes <span class="muted">(opcional)</span></label>
+          <div class="tip-tiers" id="tipTiers">
+            <div class="tip-tier" data-amount="0">Sin propina</div>
+            <div class="tip-tier" data-amount="5">S/ 5</div>
+            <div class="tip-tier" data-amount="10">S/ 10</div>
+            <div class="tip-tier" data-amount="20">S/ 20</div>
+          </div>
+        </div>
+
+        <button class="btn btn-primary btn-block" type="submit" id="submitBtn">Enviar pedido</button>
+        <p class="small muted center" id="quotaNote"></p>
+      </div>
+    </form>
+
+    <div id="tipPanel" class="ticket ticket-dark" style="display:none; margin-top:16px;">
+      <div class="ticket-body stack center">
+        <h3>Envía tu propina</h3>
+        <p class="small" id="tipInstructions">Transfiere por Yape o Plin y confirma aquí.</p>
+        <div class="qr-wrap" id="tipQrWrap"></div>
+        <button class="btn btn-brass btn-block" id="tipConfirmBtn">Ya envié la propina</button>
+        <button class="btn btn-ghost btn-block" id="tipSkipBtn">Lo haré en persona</button>
+      </div>
+    </div>
+
+    <h3 style="margin: 28px 0 12px;">Tus pedidos</h3>
+    <div id="myRequests" class="stack"></div>
+  </div>
+
+</div>
+
+<script type="module">
+import {
+  ready, watchEvent, watchRequests, submitRequest, confirmTip, getLocalGuestId, toast, fmtSoles
+} from "./js/app-common.js";
+
+const params = new URLSearchParams(location.search);
+const code = (params.get("e") || "").toUpperCase();
+const loadingState = document.getElementById("loadingState");
+const notFoundState = document.getElementById("notFoundState");
+const mainState = document.getElementById("mainState");
+
+if (!code) {
+  loadingState.style.display = "none";
+  notFoundState.style.display = "block";
+} else {
+  boot();
+}
+
+async function boot() {
+  await ready();
+  const guestId = getLocalGuestId();
+  let eventData = null;
+  let myRequests = [];
+  let selectedTip = 0;
+  let pendingRequestForTip = null;
+
+  const eyebrow = document.getElementById("eventName");
+  const djLine = document.getElementById("djLine");
+  const liveDot = document.getElementById("liveDot");
+  const nowPlayingPill = document.getElementById("nowPlayingPill");
+  const pausedNotice = document.getElementById("pausedNotice");
+  const form = document.getElementById("requestForm");
+  const submitBtn = document.getElementById("submitBtn");
+  const quotaNote = document.getElementById("quotaNote");
+  const tipTiers = document.getElementById("tipTiers");
+  const tipPanel = document.getElementById("tipPanel");
+  const tipInstructions = document.getElementById("tipInstructions");
+  const tipQrWrap = document.getElementById("tipQrWrap");
+  const myRequestsEl = document.getElementById("myRequests");
+
+  tipTiers.addEventListener("click", (e) => {
+    const el = e.target.closest(".tip-tier");
+    if (!el) return;
+    [...tipTiers.children].forEach((c) => c.classList.remove("active"));
+    el.classList.add("active");
+    selectedTip = Number(el.dataset.amount);
+  });
+  tipTiers.firstElementChild.classList.add("active");
+
+  const unsubEvent = watchEvent(code, (data) => {
+    if (!data) {
+      loadingState.style.display = "none";
+      notFoundState.style.display = "block";
+      mainState.style.display = "none";
+      return;
+    }
+    eventData = data;
+    loadingState.style.display = "none";
+    notFoundState.style.display = "none";
+    mainState.style.display = "block";
+    eyebrow.textContent = data.eventName;
+    djLine.textContent = `Pinchado por ${data.djName}`;
+    liveDot.style.background = data.status === "live" ? "var(--coral)" : "var(--text-low)";
+    pausedNotice.style.display = data.status === "live" ? "none" : "block";
+    submitBtn.disabled = data.status !== "live";
+    if (data.nowPlaying) {
+      nowPlayingPill.style.display = "inline-flex";
+      nowPlayingPill.className = "pill pill-playing mono";
+      nowPlayingPill.textContent = `▶ ${data.nowPlaying.song}`;
+    } else {
+      nowPlayingPill.style.display = "none";
+    }
+    renderTipPanel();
+  }, () => toast("Se perdió la conexión con el evento."));
+
+  const unsubRequests = watchRequests(code, (all) => {
+    myRequests = all.filter((r) => r.requesterId === guestId);
+    renderMyRequests();
+    const activeCount = myRequests.filter((r) => ["pending", "accepted", "playing"].includes(r.status)).length;
+    const max = eventData?.maxPerGuest ?? 3;
+    if (activeCount >= max) {
+      submitBtn.disabled = true;
+      quotaNote.textContent = `Ya tienes ${activeCount} pedido(s) activos (máximo ${max}). Espera a que suenen para pedir otro.`;
+    } else {
+      quotaNote.textContent = "";
+      if (eventData?.status === "live") submitBtn.disabled = false;
+    }
+  });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const song = document.getElementById("song").value.trim();
+    if (!song) return;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Enviando…";
+    try {
+      const ref = await submitRequest(code, {
+        song,
+        artist: document.getElementById("artist").value,
+        note: document.getElementById("note").value,
+        tipPledged: selectedTip,
+        requesterName: document.getElementById("name").value || "Anónimo",
+        requesterId: guestId,
+        approvalMode: eventData?.approvalMode,
+      });
+      form.reset();
+      [...tipTiers.children].forEach((c) => c.classList.remove("active"));
+      tipTiers.firstElementChild.classList.add("active");
+      submitBtn.textContent = "Enviar pedido";
+      toast("¡Pedido enviado! Sigue el estado abajo.");
+      if (selectedTip > 0) {
+        pendingRequestForTip = ref.id;
+        renderTipPanel();
+      }
+      selectedTip = 0;
+    } catch (err) {
+      submitBtn.textContent = "Enviar pedido";
+      submitBtn.disabled = false;
+      alert("No se pudo enviar el pedido. Intenta de nuevo.");
+    }
+  });
+
+  function renderTipPanel() {
+    if (!pendingRequestForTip || !eventData?.tipInfo) { tipPanel.style.display = "none"; return; }
+    const { yapeNumber, plinNumber } = eventData.tipInfo;
+    if (!yapeNumber && !plinNumber) { tipPanel.style.display = "none"; return; }
+    tipPanel.style.display = "block";
+    const parts = [];
+    if (yapeNumber) parts.push(`Yape: ${yapeNumber}`);
+    if (plinNumber) parts.push(`Plin: ${plinNumber}`);
+    tipInstructions.textContent = `Transfiere al ${parts.join(" · ")} y confirma aquí.`;
+    tipQrWrap.innerHTML = "";
+    const payload = yapeNumber ? `YAPE:${yapeNumber}` : `PLIN:${plinNumber}`;
+    new window.QRCode(tipQrWrap, {
+      text: payload,
+      width: 160,
+      height: 160,
+      colorDark: "#241733",
+      colorLight: "#F3E9D2",
+      correctLevel: window.QRCode.CorrectLevel.M,
+    });
+  }
+
+  document.getElementById("tipConfirmBtn").addEventListener("click", async () => {
+    const req = myRequests.find((r) => r.id === pendingRequestForTip);
+    if (req) await confirmTip(code, req.id, req.tipPledged);
+    toast("Gracias, el DJ verá tu propina confirmada.");
+    pendingRequestForTip = null;
+    renderTipPanel();
+  });
+  document.getElementById("tipSkipBtn").addEventListener("click", () => {
+    pendingRequestForTip = null;
+    renderTipPanel();
+  });
+
+  const statusLabel = { pending: "En espera", accepted: "Aceptado", playing: "Sonando ahora", played: "Ya sonó", rejected: "No esta vez" };
+  const statusPillClass = { pending: "pill-pending", accepted: "pill-accepted", playing: "pill-playing", played: "pill-played", rejected: "pill-rejected" };
+
+  function renderMyRequests() {
+    if (!myRequests.length) {
+      myRequestsEl.innerHTML = '<div class="empty">Todavía no has pedido ninguna canción.</div>';
+      return;
+    }
+    myRequestsEl.innerHTML = "";
+    [...myRequests].reverse().forEach((r) => {
+      const div = document.createElement("div");
+      div.className = "ticket ticket-dark slide-in";
+      div.innerHTML = `
+        <div class="ticket-body">
+          <div class="spread">
+            <strong>${escapeHtml(r.song)}</strong>
+            <span class="pill mono ${statusPillClass[r.status]}"><span class="pill-dot"></span>${statusLabel[r.status]}</span>
+          </div>
+          ${r.artist ? `<p class="small">${escapeHtml(r.artist)}</p>` : ""}
+          ${r.tipPledged ? `<p class="small tip-badge ${r.tipConfirmed ? "confirmed" : ""}">${r.tipConfirmed ? "✓ Propina confirmada" : "Propina pendiente"} · ${fmtSoles(r.tipPledged)}</p>` : ""}
+        </div>`;
+      myRequestsEl.appendChild(div);
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  window.addEventListener("beforeunload", () => { unsubEvent(); unsubRequests(); });
+}
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</body>
+</html>

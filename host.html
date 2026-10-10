@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tablero del DJ — CrowdMix</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1C1024">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div id="setupView" class="shell">
+  <div class="row" style="margin-bottom:18px;"><span class="live-dot"></span><span class="eyebrow-marquee">NUEVO EVENTO</span></div>
+  <h1 style="margin-bottom:6px;">Abre tu tablero</h1>
+  <p style="margin-bottom:24px;">En un minuto tienes un código para compartir con tu público.</p>
+  <form id="setupForm" class="ticket ticket-dark">
+    <div class="ticket-body stack">
+      <div>
+        <label for="eventName">Nombre del evento</label>
+        <input id="eventName" type="text" placeholder="Ej: Boda de Ana &amp; Luis" maxlength="60" required>
+      </div>
+      <div>
+        <label for="djName">Tu nombre de DJ</label>
+        <input id="djName" type="text" placeholder="Ej: DJ Lazo" maxlength="40" required>
+      </div>
+      <div>
+        <label for="approvalMode">¿Cómo entran los pedidos?</label>
+        <select id="approvalMode">
+          <option value="manual">Yo apruebo cada pedido</option>
+          <option value="auto">Se aceptan automáticamente</option>
+        </select>
+      </div>
+      <div>
+        <label for="maxPerGuest">Pedidos activos máx. por persona</label>
+        <input id="maxPerGuest" type="number" min="1" max="10" value="3">
+      </div>
+      <div>
+        <label for="yapeNumber">Número Yape para propinas <span class="muted">(opcional)</span></label>
+        <input id="yapeNumber" type="tel" placeholder="9xx xxx xxx">
+      </div>
+      <div>
+        <label for="plinNumber">Número Plin para propinas <span class="muted">(opcional)</span></label>
+        <input id="plinNumber" type="tel" placeholder="9xx xxx xxx">
+      </div>
+      <button class="btn btn-primary btn-block" type="submit" id="createBtn">Crear evento</button>
+    </div>
+  </form>
+  <p class="small muted center" style="margin-top:18px;">¿Ya tienes un evento abierto en otro dispositivo? <a href="#" id="resumeLink" style="text-decoration:underline;">Retomarlo con tu código</a>.</p>
+</div>
+
+<div id="dashView" class="shell-wide" style="display:none;">
+  <div class="marquee-bar spread" style="margin-bottom:20px; flex-wrap:wrap;">
+    <div>
+      <div class="row"><span class="live-dot" id="liveDot"></span><span class="eyebrow-marquee" id="eventNameLbl">Evento</span></div>
+      <h2 id="eventNameH2" style="margin-top:4px;">—</h2>
+    </div>
+    <div class="row" style="gap:20px;">
+      <div class="center">
+        <div class="odometer" id="tipTotalLbl">S/ 0</div>
+        <div class="small muted">propinas confirmadas</div>
+      </div>
+      <div class="center">
+        <div class="odometer mono" id="joinCodeLbl">------</div>
+        <div class="small muted">código de acceso</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="pauseBtn">Pausar pedidos</button>
+      <a class="btn btn-ghost btn-sm" id="displayLink" href="#" target="_blank">Pantalla grande ↗</a>
+    </div>
+  </div>
+
+  <div class="host-grid">
+    <div>
+      <div class="spread" style="margin-bottom:12px;">
+        <h3>Cola en vivo</h3>
+        <span class="small muted" id="queueCount"></span>
+      </div>
+      <div id="queueList" class="stack"></div>
+    </div>
+
+    <aside class="stack">
+      <div class="ticket ticket-dark">
+        <div class="ticket-body stack center">
+          <h3>Que se unan</h3>
+          <div class="qr-wrap" id="joinQrWrap"></div>
+          <p class="small muted">Escanean el QR o entran a crowdmix con el código</p>
+        </div>
+      </div>
+
+      <div class="ticket ticket-dark">
+        <div class="ticket-body stack">
+          <h3>Sonando ahora</h3>
+          <div id="nowPlayingBox" class="empty small">Nada sonando todavía</div>
+        </div>
+      </div>
+
+      <div class="ticket ticket-dark">
+        <div class="ticket-body stack">
+          <h3>Ajustes rápidos</h3>
+          <div>
+            <label for="approvalModeLive">Aprobación</label>
+            <select id="approvalModeLive">
+              <option value="manual">Manual</option>
+              <option value="auto">Automática</option>
+            </select>
+          </div>
+          <div>
+            <label for="yapeLive">Yape</label>
+            <input id="yapeLive" type="tel">
+          </div>
+          <div>
+            <label for="plinLive">Plin</label>
+            <input id="plinLive" type="tel">
+          </div>
+          <button class="btn btn-brass btn-sm" id="saveSettingsBtn">Guardar ajustes</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script type="module">
+import {
+  ready, createEvent, watchEvent, watchRequests, setRequestStatus, setNowPlaying,
+  deleteRequest, updateEventSettings, sortForHost, toast, fmtSoles
+} from "./js/app-common.js";
+
+const setupView = document.getElementById("setupView");
+const dashView = document.getElementById("dashView");
+const setupForm = document.getElementById("setupForm");
+const createBtn = document.getElementById("createBtn");
+
+let currentCode = localStorage.getItem("crowdmix_host_code");
+let hostToken = localStorage.getItem("crowdmix_host_token");
+
+document.getElementById("resumeLink").addEventListener("click", (e) => {
+  e.preventDefault();
+  const code = prompt("Ingresa el código de tu evento:");
+  if (code) { localStorage.setItem("crowdmix_host_code", code.toUpperCase()); location.reload(); }
+});
+
+if (currentCode && hostToken) {
+  boot(currentCode);
+} else {
+  setupView.style.display = "block";
+}
+
+setupForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  createBtn.disabled = true;
+  createBtn.textContent = "Creando…";
+  try {
+    const { code, hostToken: token } = await createEvent({
+      eventName: document.getElementById("eventName").value,
+      djName: document.getElementById("djName").value,
+      approvalMode: document.getElementById("approvalMode").value,
+      maxPerGuest: Number(document.getElementById("maxPerGuest").value) || 3,
+      tipInfo: {
+        yapeNumber: document.getElementById("yapeNumber").value.trim(),
+        plinNumber: document.getElementById("plinNumber").value.trim(),
+      },
+    });
+    localStorage.setItem("crowdmix_host_code", code);
+    localStorage.setItem("crowdmix_host_token", token);
+    boot(code);
+  } catch (err) {
+    createBtn.disabled = false;
+    createBtn.textContent = "Crear evento";
+    alert("No se pudo crear el evento. Revisa tu configuración de Firebase (ver README.md).");
+    console.error(err);
+  }
+});
+
+async function boot(code) {
+  await ready();
+  setupView.style.display = "none";
+  dashView.style.display = "block";
+
+  document.getElementById("joinCodeLbl").textContent = code;
+  document.getElementById("displayLink").href = `display.html?e=${code}`;
+
+  const joinUrl = `${location.origin}${location.pathname.replace("host.html", "")}guest.html?e=${code}`;
+  const joinQrWrap = document.getElementById("joinQrWrap");
+  new window.QRCode(joinQrWrap, {
+    text: joinUrl,
+    width: 170,
+    height: 170,
+    colorDark: "#241733",
+    colorLight: "#F3E9D2",
+    correctLevel: window.QRCode.CorrectLevel.M,
+  });
+
+  let eventData = null;
+  let requests = [];
+
+  watchEvent(code, (data) => {
+    if (!data) return;
+    eventData = data;
+    document.getElementById("eventNameLbl").textContent = `Panel de ${data.djName}`;
+    document.getElementById("eventNameH2").textContent = data.eventName;
+    document.getElementById("tipTotalLbl").textContent = fmtSoles(data.tipConfirmedTotal || 0);
+    document.getElementById("liveDot").style.background = data.status === "live" ? "var(--coral)" : "var(--text-low)";
+    document.getElementById("pauseBtn").textContent = data.status === "live" ? "Pausar pedidos" : "Reanudar pedidos";
+    document.getElementById("approvalModeLive").value = data.approvalMode;
+    document.getElementById("yapeLive").value = data.tipInfo?.yapeNumber || "";
+    document.getElementById("plinLive").value = data.tipInfo?.plinNumber || "";
+
+    const npBox = document.getElementById("nowPlayingBox");
+    if (data.nowPlaying) {
+      npBox.className = "";
+      npBox.innerHTML = `<strong>${escapeHtml(data.nowPlaying.song)}</strong>`;
+    } else {
+      npBox.className = "empty small";
+      npBox.textContent = "Nada sonando todavía";
+    }
+  }, () => toast("Se perdió la conexión."));
+
+  watchRequests(code, (all) => {
+    requests = all;
+    renderQueue();
+  }, () => toast("Se perdió la conexión con la cola."));
+
+  function renderQueue() {
+    const visible = requests.filter((r) => r.status !== "rejected" && r.status !== "played");
+    document.getElementById("queueCount").textContent = `${visible.length} en cola`;
+    const list = document.getElementById("queueList");
+    if (!visible.length) {
+      list.innerHTML = '<div class="empty">Todavía no llegan pedidos. Comparte el QR para empezar.</div>';
+      return;
+    }
+    const sorted = sortForHost(visible);
+    list.innerHTML = "";
+    sorted.forEach((r) => {
+      const card = document.createElement("div");
+      card.className = `queue-card slide-in ${r.status === "playing" ? "is-playing" : ""}`;
+      card.innerHTML = `
+        <div class="spread">
+          <div>
+            <strong>${escapeHtml(r.song)}</strong>
+            ${r.artist ? `<span class="muted"> — ${escapeHtml(r.artist)}</span>` : ""}
+          </div>
+          <span class="pill mono pill-${r.status}"><span class="pill-dot"></span>${statusLabel(r.status)}</span>
+        </div>
+        <p class="small muted" style="margin-top:4px;">Pedido por ${escapeHtml(r.requesterName || "Anónimo")}${r.note ? ` · "${escapeHtml(r.note)}"` : ""}</p>
+        ${r.tipPledged ? `<p class="tip-badge ${r.tipConfirmed ? "confirmed" : ""}" style="margin-top:6px;">${r.tipConfirmed ? "✓" : "⏳"} ${fmtSoles(r.tipPledged)} de propina</p>` : ""}
+        <div class="action-row" data-id="${r.id}">
+          ${r.status === "pending" ? `<button class="btn btn-brass btn-sm" data-act="accept">Aceptar</button><button class="btn btn-ghost btn-sm" data-act="reject">Rechazar</button>` : ""}
+          ${r.status === "accepted" ? `<button class="btn btn-primary btn-sm" data-act="play">Reproducir ahora</button>` : ""}
+          ${r.status === "playing" ? `<button class="btn btn-ghost btn-sm" data-act="played">Marcar como reproducida</button>` : ""}
+        </div>`;
+      list.appendChild(card);
+    });
+    list.querySelectorAll(".action-row").forEach((row) => {
+      row.addEventListener("click", async (e) => {
+        const btn = e.target.closest("button");
+        if (!btn) return;
+        const id = row.dataset.id;
+        const act = btn.dataset.act;
+        const req = requests.find((r) => r.id === id);
+        if (act === "accept") await setRequestStatus(code, id, "accepted");
+        if (act === "reject") await setRequestStatus(code, id, "rejected");
+        if (act === "play") await setNowPlaying(code, req);
+        if (act === "played") await setRequestStatus(code, id, "played");
+      });
+    });
+  }
+
+  function statusLabel(s) {
+    return { pending: "En espera", accepted: "Aceptado", playing: "Sonando", played: "Reproducida", rejected: "Rechazado" }[s] || s;
+  }
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  document.getElementById("pauseBtn").addEventListener("click", async () => {
+    const next = eventData.status === "live" ? "paused" : "live";
+    await updateEventSettings(code, { status: next });
+  });
+
+  document.getElementById("saveSettingsBtn").addEventListener("click", async () => {
+    await updateEventSettings(code, {
+      approvalMode: document.getElementById("approvalModeLive").value,
+      tipInfo: {
+        yapeNumber: document.getElementById("yapeLive").value.trim(),
+        plinNumber: document.getElementById("plinLive").value.trim(),
+      },
+    });
+    toast("Ajustes guardados.");
+  });
+}
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</body>
+</html>

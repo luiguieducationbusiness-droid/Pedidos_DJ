@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CrowdMix — Pedidos y propinas en vivo para DJs</title>
+<meta name="description" content="El público pide canciones y deja propina en tiempo real; el DJ controla el tablero en vivo.">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1C1024">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div class="shell">
+  <header class="stack" style="margin-bottom:36px;">
+    <div class="row"><span class="live-dot"></span><span class="eyebrow-marquee">EN VIVO · PEDIDOS Y PROPINAS</span></div>
+    <div class="tag-brand">Crowd<span>Mix</span></div>
+    <p>Tu público pide la próxima canción y deja propina desde su celular. Tú decides qué suena — el tablero se actualiza al instante.</p>
+  </header>
+
+  <div class="stack" style="gap:20px;">
+    <div class="ticket ticket-dark">
+      <div class="ticket-body stack">
+        <h2>Soy el DJ</h2>
+        <p class="small">Abre un evento nuevo, comparte el código o el QR con tu público, y controla el tablero desde tu laptop o tablet.</p>
+        <a class="btn btn-primary btn-block" href="host.html">Abrir mi tablero</a>
+      </div>
+    </div>
+
+    <div class="ticket ticket-dark">
+      <div class="ticket-body stack">
+        <h2>Soy del público</h2>
+        <p class="small">Escribe el código de 6 letras que te dio el DJ, o escanea el QR que está en la pantalla del evento.</p>
+        <form id="joinForm" class="stack" style="gap:10px;">
+          <input id="joinCode" type="text" inputmode="text" minlength="6" maxlength="6" pattern="[A-Z0-9]{6}" required placeholder="CÓDIGO, ej. K7MZQ2" class="mono" style="text-transform:uppercase; letter-spacing:0.15em; text-align:center; font-size:1.2rem;">
+          <button class="btn btn-brass btn-block" type="submit">Pedir una canción</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <p class="muted small center" style="margin-top:40px;">
+    Hecho para fiestas, bodas y noches de club. Las propinas se coordinan por Yape/Plin —
+    <a href="README.md" style="text-decoration:underline;">cómo funciona</a>.
+  </p>
+  <p class="muted small center" style="margin-top:12px;">Creado por: © Lazo &amp; Nexora Studio</p>
+</div>
+
+<script type="module">
+  import { eventRef, ready } from "./js/app-common.js";
+  import { getDoc } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+  const form = document.getElementById("joinForm");
+  const input = document.getElementById("joinCode");
+  input.addEventListener("input", () => { input.value = input.value.toUpperCase().replace(/[^A-Z0-9]/g, ""); });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const code = input.value.trim();
+    if (code.length !== 6) return;
+    const btn = form.querySelector("button");
+    btn.disabled = true; btn.textContent = "Buscando evento…";
+    try {
+      await ready();
+      const snap = await getDoc(eventRef(code));
+      if (!snap.exists()) {
+        btn.disabled = false; btn.textContent = "Pedir una canción";
+        alert("No encontramos ese código. Verifícalo con el DJ.");
+        return;
+      }
+      window.location.href = `guest.html?e=${code}`;
+    } catch (err) {
+      btn.disabled = false; btn.textContent = "Pedir una canción";
+      alert("No se pudo conectar. Revisa tu internet e inténtalo otra vez.");
+    }
+  });
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+</script>
+</body>
+</html>
