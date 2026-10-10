@@ -18,10 +18,11 @@ Plin; la aplicación no procesa pagos.
 ## Publicar en GitHub Pages
 
 El workflow `.github/workflows/deploy.yml` publica automáticamente el sitio en
-GitHub Pages al subir cambios a la rama `main`. En GitHub, abre **Settings →
-Pages** y selecciona **GitHub Actions** como fuente de publicación. También
-puedes ejecutar el workflow manualmente desde **Actions → Deploy CrowdMix to
-GitHub Pages → Run workflow**.
+GitHub Pages al subir cambios a la rama `main` e intenta habilitar Pages. Si
+GitHub no permite habilitarlo desde el workflow, abre **Settings → Pages** y
+selecciona **GitHub Actions** como fuente de publicación. También puedes
+ejecutar el workflow manualmente desde **Actions → Deploy CrowdMix to GitHub
+Pages → Run workflow**.
 
 Para este repositorio, la URL del sitio será
 `https://luiguieducationbusiness-droid.github.io/Pedidos_DJ/`. En Firebase
