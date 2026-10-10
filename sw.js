@@ -1,4 +1,4 @@
-const CACHE = "crowdmix-shell-v4";
+const CACHE = "crowdmix-shell-v5";
 const SHELL = [
   "./index.html",
   "./host.html",

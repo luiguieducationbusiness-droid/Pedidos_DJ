@@ -65,6 +65,7 @@
         <div class="odometer mono" id="joinCodeLbl">------</div>
         <div class="small muted">código de acceso</div>
       </div>
+      <a class="btn btn-brass btn-sm" href="host.html?new=1">Crear otro evento</a>
       <button class="btn btn-ghost btn-sm" id="pauseBtn">Pausar pedidos</button>
       <a class="btn btn-ghost btn-sm" id="displayLink" href="#" target="_blank">Pantalla grande ↗</a>
     </div>
@@ -133,6 +134,7 @@ const createBtn = document.getElementById("createBtn");
 
 let currentCode = localStorage.getItem("crowdmix_host_code");
 let hostToken = localStorage.getItem("crowdmix_host_token");
+const startNewEvent = new URLSearchParams(location.search).get("new") === "1";
 
 document.getElementById("resumeLink").addEventListener("click", (e) => {
   e.preventDefault();
@@ -140,7 +142,7 @@ document.getElementById("resumeLink").addEventListener("click", (e) => {
   if (code) { localStorage.setItem("crowdmix_host_code", code.toUpperCase()); location.reload(); }
 });
 
-if (currentCode && hostToken) {
+if (currentCode && hostToken && !startNewEvent) {
   boot(currentCode);
 } else {
   setupView.style.display = "block";
@@ -163,6 +165,7 @@ setupForm.addEventListener("submit", async (e) => {
     });
     localStorage.setItem("crowdmix_host_code", code);
     localStorage.setItem("crowdmix_host_token", token);
+    if (startNewEvent) history.replaceState(null, "", location.pathname);
     boot(code);
   } catch (err) {
     createBtn.disabled = false;

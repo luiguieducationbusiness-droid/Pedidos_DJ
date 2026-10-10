@@ -32,9 +32,11 @@ puede fallar desde el sitio publicado.
 
 ## Uso
 
-- **DJ:** abre `host.html`, completa los datos y crea un evento. Comparte el
-  código o el QR con el público; desde el tablero puedes gestionar pedidos,
-  pausar la recepción y actualizar los datos para propinas.
+- **DJ:** selecciona **Crear un tablero nuevo**, completa los datos y crea el
+  evento. Comparte el código o el QR con el público; desde el tablero puedes
+  gestionar pedidos, pausar la recepción, actualizar los datos para propinas y
+  crear otro evento. La aplicación recuerda el último evento creado en ese
+  navegador y solo cambia al nuevo al terminar de crearlo.
 - **Público:** abre `index.html`, ingresa el código del evento y envía una
   canción. Los pedidos y sus estados aparecen en tiempo real.
 - **Pantalla grande:** desde el tablero del DJ, abre “Pantalla grande” para
